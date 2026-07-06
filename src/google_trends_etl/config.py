@@ -20,6 +20,7 @@ class Settings:
     pg_params: Mapping[str, str]
     trends_geo: str
     trends_top_n: int
+    pre_load_sleep_seconds: float
 
 
 def load_settings(*, geo_override: str | None = None) -> Settings:
@@ -33,12 +34,17 @@ def load_settings(*, geo_override: str | None = None) -> Settings:
         raise ConfigError("TRENDS_GEO must not be empty.")
 
     trends_top_n = _parse_top_n()
+    pre_load_sleep_seconds = _parse_non_negative_float(
+        "PRE_LOAD_SLEEP_SECONDS",
+        default="20",
+    )
 
     return Settings(
         database_url=database_url,
         pg_params=pg_params,
         trends_geo=trends_geo,
         trends_top_n=trends_top_n,
+        pre_load_sleep_seconds=pre_load_sleep_seconds,
     )
 
 
@@ -84,4 +90,15 @@ def _parse_top_n() -> int:
     value = _parse_positive_int("TRENDS_TOP_N", default="25")
     if value > 25:
         raise ConfigError("TRENDS_TOP_N must be between 1 and 25.")
+    return value
+
+
+def _parse_non_negative_float(name: str, *, default: str) -> float:
+    raw_value = os.environ.get(name, default).strip()
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be a number, got {raw_value!r}.") from exc
+    if value < 0:
+        raise ConfigError(f"{name} must be zero or greater, got {value}.")
     return value

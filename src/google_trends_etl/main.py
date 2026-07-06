@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
 from typing import Sequence
 
 from google_trends_etl.config import ConfigError, Settings, load_settings
@@ -37,6 +38,13 @@ def run(
                 len(records),
                 settings.trends_top_n,
             )
+
+        if settings.pre_load_sleep_seconds:
+            LOGGER.info(
+                "Sleeping %.2f second(s) before load.",
+                settings.pre_load_sleep_seconds,
+            )
+            time.sleep(settings.pre_load_sleep_seconds)
 
         rows_inserted = insert_records(conn, records)
         LOGGER.info("Inserted %s current trend row(s).", rows_inserted)
