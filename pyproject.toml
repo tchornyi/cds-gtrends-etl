@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 name = "cds-proto-etl"
 version = "0.1.0"
 description = "Point-in-time Google Trends ETL snapshots into PostgreSQL."
-readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "psycopg[binary]>=3.2,<4",
