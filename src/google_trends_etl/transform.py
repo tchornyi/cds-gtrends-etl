@@ -203,6 +203,10 @@ def _parse_growth_pct(value: Any) -> int | None:
 def _parse_optional_datetime(value: Any) -> datetime | None:
     if value in (None, ""):
         return None
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        if not value:
+            return None
+        return _parse_optional_datetime(value[0])
     if isinstance(value, datetime):
         return _make_aware(value)
     if isinstance(value, date):
