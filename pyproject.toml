@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cds-proto-etl"
+version = "0.1.0"
+description = "Point-in-time Google Trends ETL snapshots into PostgreSQL."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "psycopg[binary]>=3.2,<4",
+    "python-dotenv>=1.0,<2",
+    "trendspy==0.1.6",
+]
+
+[project.scripts]
+google-trends-etl = "google_trends_etl.main:main"
+google-trends-migrate = "google_trends_etl.migrate:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/google_trends_etl"]
