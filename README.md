@@ -43,6 +43,9 @@ Then edit `.env` with either `DATABASE_URL` or all `PG*` settings.
 | `TRENDS_GEO`             | Two-letter geo code for the trending feed                      | `US`    |
 | `TRENDS_TOP_N`           | How many top trends to keep (1–25)                             | `25`    |
 | `TRENDS_TIMEZONE`        | IANA timezone for `trend_date` day bucketing (e.g. `Europe/Kyiv`) | system local |
+| `SEARCH_TERMS`           | Comma-separated terms for the search-volumes pipelines        | —       |
+| `REFERENCE_TERM`         | Calibration anchor term for approximating absolute volumes    | `google` |
+| `REFERENCE_TERM_DAILY_VOLUME` | Assumed daily volume of the anchor term                  | `300000000` |
 | `PRE_LOAD_SLEEP_SECONDS` | Simulated delay before loading records into PostgreSQL         | `20`    |
 
 A local `.env` is auto-loaded; real environment variables always override it.
@@ -60,6 +63,24 @@ uv run google-trends-migrate
 uv run google-trends-etl --skip-migrations --log-level DEBUG
 uv run google-trends-etl --geo GB
 ```
+
+Additional pipelines (both require `SEARCH_TERMS`):
+
+```bash
+# Approximate absolute daily volumes for SEARCH_TERMS -> search_volumes
+# (append-only snapshots).
+uv run google-search-volumes-etl
+
+# Approximate volumes per country per local day -> country_search_volumes
+# (same-day rerun updates the row, a new day inserts a fresh one).
+uv run google-country-search-volumes-etl
+```
+
+Google Trends only reports relative 0–100 interest, so absolute figures are
+calibrated against a reference term:
+`volume(term) ≈ interest(term) / interest(reference) × REFERENCE_TERM_DAILY_VOLUME`.
+Country rows distribute the term's calibrated volume by each country's share
+of regional interest. Treat every volume as an approximation, never a count.
 
 The main ETL command applies pending migrations before extracting and loading
 data, so Docker entrypoints only need to run `uv run google-trends-etl`.

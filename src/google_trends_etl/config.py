@@ -26,6 +26,14 @@ class Settings:
     # system's local timezone at snapshot time.
     trends_timezone: tzinfo | None
     pre_load_sleep_seconds: float
+    # Terms tracked by the search-volumes pipelines; empty when unset — the
+    # volume pipelines fail fast, the trending pipeline doesn't need it.
+    search_terms: tuple[str, ...]
+    # Calibration anchor for approximating absolute volumes: Google Trends
+    # only reports relative 0-100 interest, so volumes are scaled off a
+    # reference term with an assumed daily volume.
+    reference_term: str
+    reference_term_daily_volume: int
 
 
 def load_settings(*, geo_override: str | None = None) -> Settings:
@@ -52,6 +60,12 @@ def load_settings(*, geo_override: str | None = None) -> Settings:
         trends_top_n=trends_top_n,
         trends_timezone=trends_timezone,
         pre_load_sleep_seconds=pre_load_sleep_seconds,
+        search_terms=_parse_search_terms(),
+        reference_term=_non_empty("REFERENCE_TERM") or "google",
+        reference_term_daily_volume=_parse_positive_int(
+            "REFERENCE_TERM_DAILY_VOLUME",
+            default="300000000",
+        ),
     )
 
 
@@ -98,6 +112,12 @@ def _parse_top_n() -> int:
     if value > 25:
         raise ConfigError("TRENDS_TOP_N must be between 1 and 25.")
     return value
+
+
+def _parse_search_terms() -> tuple[str, ...]:
+    raw_value = os.environ.get("SEARCH_TERMS", "")
+    terms = (term.strip() for term in raw_value.split(","))
+    return tuple(dict.fromkeys(term for term in terms if term))
 
 
 def _parse_timezone(name: str) -> tzinfo | None:

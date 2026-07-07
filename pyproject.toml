@@ -19,6 +19,8 @@ dependencies = [
 [project.scripts]
 google-trends-etl = "google_trends_etl.main:main"
 google-trends-migrate = "google_trends_etl.migrate:main"
+google-search-volumes-etl = "google_trends_etl.search_volumes_main:main"
+google-country-search-volumes-etl = "google_trends_etl.country_search_volumes_main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/google_trends_etl"]

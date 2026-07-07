@@ -31,13 +31,21 @@ inserts a fresh one — per-day trend history.
 migrations/                       # NNN_*.sql, applied in filename order
   001_create_current_trends.sql
 src/google_trends_etl/
-  config.py      # DB creds + TRENDS_GEO from env (DATABASE_URL or PG* vars); loads .env
+  config.py      # DB creds + pipeline settings from env (DATABASE_URL or PG* vars); loads .env
   db.py          # psycopg connection helper
   migrate.py     # migration runner (entry point: google-trends-migrate)
   extract.py     # trendspy client (Trending Now feed)
   transform.py   # raw trend entry -> TrendRecord
   load.py        # bulk insert
   main.py        # orchestrates E->T->L (entry point: google-trends-etl)
+  extract_search_volumes.py            # interest-over-time batches for SEARCH_TERMS
+  transform_search_volumes.py          # anchor-calibrated approximate volumes
+  load_search_volumes.py               # append into search_volumes
+  search_volumes_main.py               # entry point: google-search-volumes-etl
+  extract_country_search_volumes.py    # per-country interest + calibration batches
+  transform_country_search_volumes.py  # distribute term volume by country share
+  load_country_search_volumes.py       # upsert into country_search_volumes
+  country_search_volumes_main.py       # entry point: google-country-search-volumes-etl
 ```
 
 One module per pipeline stage. A future second pipeline in this repo gets its
@@ -75,6 +83,13 @@ Pipeline settings:
 - `TRENDS_TOP_N` — how many top trends to keep (default: `25`).
 - `TRENDS_TIMEZONE` — IANA timezone for `trend_date` day bucketing
   (e.g. `Europe/Kyiv`; default: system local timezone).
+- `SEARCH_TERMS` — comma-separated terms for the search-volumes pipelines
+  (required by those pipelines only).
+- `REFERENCE_TERM` / `REFERENCE_TERM_DAILY_VOLUME` — calibration anchor for
+  approximating absolute volumes (defaults: `google` / `300000000`). Google
+  Trends only reports relative 0–100 interest, so
+  `volume(term) ≈ interest(term) / interest(reference) × reference volume`;
+  country volumes distribute the term volume by each country's interest share.
 
 A local `.env` is auto-loaded; real environment variables always override it.
 Fail fast with a clear message when required variables are missing.
