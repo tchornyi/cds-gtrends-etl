@@ -18,6 +18,7 @@ INSERT INTO country_search_volumes (
     volume_date,
     search_volume,
     interest,
+    country_weight,
     snapshot_id,
     snapshot_at
 ) VALUES (
@@ -27,12 +28,14 @@ INSERT INTO country_search_volumes (
     %(volume_date)s,
     %(search_volume)s,
     %(interest)s,
+    %(country_weight)s,
     %(snapshot_id)s,
     %(snapshot_at)s
 )
 ON CONFLICT (term, country_code, volume_date) DO UPDATE SET
     search_volume = EXCLUDED.search_volume,
     interest = EXCLUDED.interest,
+    country_weight = EXCLUDED.country_weight,
     country_name = COALESCE(EXCLUDED.country_name, country_search_volumes.country_name),
     snapshot_id = EXCLUDED.snapshot_id,
     snapshot_at = EXCLUDED.snapshot_at
@@ -61,6 +64,7 @@ def _as_params(record: CountryVolumeRecord) -> dict[str, Any]:
         "volume_date": record.volume_date,
         "search_volume": record.search_volume,
         "interest": record.interest,
+        "country_weight": record.country_weight,
         "snapshot_id": record.snapshot_id,
         "snapshot_at": record.snapshot_at,
     }

@@ -7,10 +7,12 @@ import logging
 from typing import Sequence
 
 from google_trends_etl.config import ConfigError, Settings, load_settings
+from google_trends_etl.country_weights import build_country_weights
 from google_trends_etl.db import connect
 from google_trends_etl.extract_country_search_volumes import extract_country_interest
 from google_trends_etl.load_country_search_volumes import upsert_country_volumes
 from google_trends_etl.migrate import apply_migrations
+from google_trends_etl.telemetry import record_rows_affected
 from google_trends_etl.transform_country_search_volumes import transform_country_volumes
 
 LOGGER = logging.getLogger(__name__)
@@ -37,13 +39,25 @@ def run(
             extracted,
             reference_volume=settings.reference_term_daily_volume,
             local_tz=settings.trends_timezone,
+            country_weights=build_country_weights(
+                settings.country_volume_weight_overrides,
+            ),
+            unknown_country_weight=settings.country_volume_unknown_weight,
         )
 
         if not records:
-            LOGGER.warning("No country volume rows produced for %s term(s).",
-                           len(settings.search_terms))
+            LOGGER.warning(
+                "No country volume rows produced for %s term(s).",
+                len(settings.search_terms),
+            )
 
         rows_upserted = upsert_country_volumes(conn, records)
+        record_rows_affected(
+            rows_upserted,
+            pipeline="country_search_volumes",
+            table="country_search_volumes",
+            operation="upsert",
+        )
         LOGGER.info("Upserted %s country volume row(s).", rows_upserted)
         return rows_upserted
 

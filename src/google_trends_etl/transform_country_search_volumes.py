@@ -10,6 +10,7 @@ from datetime import UTC, date, datetime, tzinfo
 from typing import Any
 from uuid import UUID, uuid4
 
+from google_trends_etl.country_weights import DEFAULT_COUNTRY_WEIGHTS
 from google_trends_etl.extract_country_search_volumes import CountryExtract, InterestBatch
 
 LOGGER = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class CountryVolumeRecord:
     country_code: str
     country_name: str | None
     interest: int
+    country_weight: int
     search_volume: int
 
 
@@ -42,10 +44,14 @@ def transform_country_volumes(
     snapshot_id: UUID | None = None,
     snapshot_at: datetime | None = None,
     local_tz: tzinfo | None = None,
+    country_weights: Mapping[str, int] | None = None,
+    unknown_country_weight: int = 0,
 ) -> list[CountryVolumeRecord]:
     snapshot_id = snapshot_id or uuid4()
     snapshot_at = _make_aware(snapshot_at or datetime.now(UTC))
     volume_date = _local_date(snapshot_at, local_tz)
+    if country_weights is None:
+        country_weights = DEFAULT_COUNTRY_WEIGHTS
 
     global_volumes = _global_volumes(extracted.interest_batches, reference_volume)
 
@@ -64,19 +70,36 @@ def transform_country_volumes(
             LOGGER.exception("Skipping term %r: unusable country interest data.", term)
             continue
 
-        total_interest = sum(interest for _, _, interest in rows)
-        if total_interest <= 0:
-            LOGGER.warning("Skipping term %r: zero interest across all countries.", term)
+        weighted_rows = _weighted_country_rows(
+            rows,
+            country_weights=country_weights,
+            unknown_country_weight=unknown_country_weight,
+        )
+        total_weighted_interest = sum(row[4] for row in weighted_rows)
+        if total_weighted_interest <= 0:
+            LOGGER.warning(
+                "Skipping term %r: no positive weighted country interest.",
+                term,
+            )
             continue
 
-        for country_code, country_name, interest in rows:
+        for (
+            country_code,
+            country_name,
+            interest,
+            country_weight,
+            weighted_interest,
+        ) in weighted_rows:
             key = (term, country_code)
             if key in seen:
                 continue
             seen.add(key)
-            # Distribute the term's calibrated global volume by each country's
-            # share of regional interest. Coarse approximation, never exact.
-            search_volume = int(round(global_volume * interest / total_interest))
+            # Distribute the calibrated global volume by interest weighted by a
+            # country-size proxy. This keeps high-relative-interest small
+            # countries from receiving large absolute-volume estimates.
+            search_volume = int(
+                round(global_volume * weighted_interest / total_weighted_interest)
+            )
             records.append(
                 CountryVolumeRecord(
                     snapshot_id=snapshot_id,
@@ -85,12 +108,51 @@ def transform_country_volumes(
                     term=term,
                     country_code=country_code,
                     country_name=country_name,
-                    interest=min(interest, 100),
+                    interest=interest,
+                    country_weight=country_weight,
                     search_volume=search_volume,
                 )
             )
 
     return records
+
+
+def _weighted_country_rows(
+    rows: Sequence[tuple[str, str | None, int]],
+    *,
+    country_weights: Mapping[str, int],
+    unknown_country_weight: int,
+) -> list[tuple[str, str | None, int, int, int]]:
+    weighted_rows: list[tuple[str, str | None, int, int, int]] = []
+    seen_codes: set[str] = set()
+    for country_code, country_name, interest in rows:
+        normalized_code = country_code.upper()
+        if normalized_code in seen_codes:
+            continue
+        seen_codes.add(normalized_code)
+
+        normalized_interest = min(max(interest, 0), 100)
+        country_weight = country_weights.get(normalized_code, unknown_country_weight)
+        if country_weight <= 0:
+            LOGGER.debug(
+                "Skipping country %s: no positive country weight configured.",
+                normalized_code,
+            )
+            continue
+
+        weighted_interest = normalized_interest * country_weight
+        if weighted_interest <= 0:
+            continue
+        weighted_rows.append(
+            (
+                normalized_code,
+                country_name,
+                normalized_interest,
+                country_weight,
+                weighted_interest,
+            )
+        )
+    return weighted_rows
 
 
 def _global_volumes(

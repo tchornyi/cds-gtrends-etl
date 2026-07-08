@@ -12,6 +12,7 @@ from google_trends_etl.db import connect
 from google_trends_etl.extract import extract_trends
 from google_trends_etl.load import insert_records
 from google_trends_etl.migrate import apply_migrations
+from google_trends_etl.telemetry import record_rows_affected
 from google_trends_etl.transform import transform_trends
 
 LOGGER = logging.getLogger(__name__)
@@ -51,6 +52,12 @@ def run(
             time.sleep(settings.pre_load_sleep_seconds)
 
         rows_inserted = insert_records(conn, records)
+        record_rows_affected(
+            rows_inserted,
+            pipeline="current_trends",
+            table="current_trends",
+            operation="upsert",
+        )
         LOGGER.info("Inserted %s current trend row(s).", rows_inserted)
         return rows_inserted
 

@@ -46,6 +46,8 @@ Then edit `.env` with either `DATABASE_URL` or all `PG*` settings.
 | `SEARCH_TERMS`           | Comma-separated terms for the search-volumes pipelines        | —       |
 | `REFERENCE_TERM`         | Calibration anchor term for approximating absolute volumes    | `google` |
 | `REFERENCE_TERM_DAILY_VOLUME` | Assumed daily volume of the anchor term                  | `300000000` |
+| `COUNTRY_VOLUME_WEIGHT_OVERRIDES` | Optional `CODE=WEIGHT` overrides for bundled country-size weights | — |
+| `COUNTRY_VOLUME_UNKNOWN_WEIGHT` | Weight for unknown country codes; `0` skips them          | `0`     |
 | `PRE_LOAD_SLEEP_SECONDS` | Simulated delay before loading records into PostgreSQL         | `20`    |
 
 A local `.env` is auto-loaded; real environment variables always override it.
@@ -79,11 +81,24 @@ uv run google-country-search-volumes-etl
 Google Trends only reports relative 0–100 interest, so absolute figures are
 calibrated against a reference term:
 `volume(term) ≈ interest(term) / interest(reference) × REFERENCE_TERM_DAILY_VOLUME`.
-Country rows distribute the term's calibrated volume by each country's share
-of regional interest. Treat every volume as an approximation, never a count.
+Country rows then distribute the term's calibrated volume by relative interest
+weighted with a country-size proxy:
+`country_volume ≈ volume(term) × (country_interest × country_weight) / sum(country_interest × country_weight)`.
+The bundled weights are rough population proxies and can be overridden with
+`COUNTRY_VOLUME_WEIGHT_OVERRIDES`. Treat every volume as an approximation,
+never a count.
 
 The main ETL command applies pending migrations before extracting and loading
 data, so Docker entrypoints only need to run `uv run google-trends-etl`.
+
+## Telemetry
+
+Each ETL records an OpenTelemetry histogram after the load stage:
+`google_trends_etl.rows_affected`. It is recorded once per completed run with
+attributes `pipeline`, `table`, and `operation`. Export is handled by the
+OpenTelemetry provider/exporter configured for the container; the metric helper
+attempts a non-fatal flush after recording so short-lived batch runs can emit
+before exit.
 
 ## Schema (`current_trends`)
 

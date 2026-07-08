@@ -34,6 +34,8 @@ class Settings:
     # reference term with an assumed daily volume.
     reference_term: str
     reference_term_daily_volume: int
+    country_volume_weight_overrides: Mapping[str, int]
+    country_volume_unknown_weight: int
 
 
 def load_settings(*, geo_override: str | None = None) -> Settings:
@@ -65,6 +67,11 @@ def load_settings(*, geo_override: str | None = None) -> Settings:
         reference_term_daily_volume=_parse_positive_int(
             "REFERENCE_TERM_DAILY_VOLUME",
             default="300000000",
+        ),
+        country_volume_weight_overrides=_parse_country_weight_overrides(),
+        country_volume_unknown_weight=_parse_non_negative_int(
+            "COUNTRY_VOLUME_UNKNOWN_WEIGHT",
+            default="0",
         ),
     )
 
@@ -107,6 +114,16 @@ def _parse_positive_int(name: str, *, default: str) -> int:
     return value
 
 
+def _parse_non_negative_int(name: str, *, default: str) -> int:
+    raw_value = os.environ.get(name, default).strip()
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be an integer, got {raw_value!r}.") from exc
+    if value < 0:
+        raise ConfigError(f"{name} must be zero or greater, got {value}.")
+    return value
+
 def _parse_top_n() -> int:
     value = _parse_positive_int("TRENDS_TOP_N", default="25")
     if value > 25:
@@ -119,6 +136,35 @@ def _parse_search_terms() -> tuple[str, ...]:
     terms = (term.strip() for term in raw_value.split(","))
     return tuple(dict.fromkeys(term for term in terms if term))
 
+
+def _parse_country_weight_overrides() -> Mapping[str, int]:
+    raw_value = os.environ.get("COUNTRY_VOLUME_WEIGHT_OVERRIDES", "")
+    weights: dict[str, int] = {}
+    for item in raw_value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise ConfigError(
+                "COUNTRY_VOLUME_WEIGHT_OVERRIDES must use CODE=WEIGHT pairs, "
+                f"got {item!r}."
+            )
+        code, raw_weight = item.split("=", 1)
+        code = code.strip().upper()
+        if not code:
+            raise ConfigError("COUNTRY_VOLUME_WEIGHT_OVERRIDES contains an empty code.")
+        try:
+            weight = int(raw_weight.strip())
+        except ValueError as exc:
+            raise ConfigError(
+                f"Country weight override for {code} must be an integer."
+            ) from exc
+        if weight < 0:
+            raise ConfigError(
+                f"Country weight override for {code} must be zero or greater."
+            )
+        weights[code] = weight
+    return MappingProxyType(weights)
 
 def _parse_timezone(name: str) -> tzinfo | None:
     raw_value = _non_empty(name)

@@ -11,6 +11,7 @@ from google_trends_etl.db import connect
 from google_trends_etl.extract_search_volumes import extract_interest
 from google_trends_etl.load_search_volumes import insert_search_volumes
 from google_trends_etl.migrate import apply_migrations
+from google_trends_etl.telemetry import record_rows_affected
 from google_trends_etl.transform_search_volumes import transform_search_volumes
 
 LOGGER = logging.getLogger(__name__)
@@ -43,6 +44,12 @@ def run(
             )
 
         rows_inserted = insert_search_volumes(conn, records)
+        record_rows_affected(
+            rows_inserted,
+            pipeline="search_volumes",
+            table="search_volumes",
+            operation="insert",
+        )
         LOGGER.info("Inserted %s search volume row(s).", rows_inserted)
         return rows_inserted
 
