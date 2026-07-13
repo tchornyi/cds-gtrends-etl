@@ -17,6 +17,14 @@ class ConfigError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class GoogleTrendsSettings:
+    request_delay_seconds: float
+    max_retries: int
+    retry_backoff_seconds: float
+    retry_backoff_multiplier: float
+
+
+@dataclass(frozen=True)
 class Settings:
     database_url: str | None
     pg_params: Mapping[str, str]
@@ -26,7 +34,7 @@ class Settings:
     # system's local timezone at snapshot time.
     trends_timezone: tzinfo | None
     pre_load_sleep_seconds: float
-    # Terms tracked by the search-volumes pipelines; empty when unset — the
+    # Terms tracked by the search-volumes pipelines; empty when unset. The
     # volume pipelines fail fast, the trending pipeline doesn't need it.
     search_terms: tuple[str, ...]
     # Calibration anchor for approximating absolute volumes: Google Trends
@@ -36,6 +44,7 @@ class Settings:
     reference_term_daily_volume: int
     country_volume_weight_overrides: Mapping[str, int]
     country_volume_unknown_weight: int
+    google_trends: GoogleTrendsSettings
 
 
 def load_settings(*, geo_override: str | None = None) -> Settings:
@@ -73,6 +82,7 @@ def load_settings(*, geo_override: str | None = None) -> Settings:
             "COUNTRY_VOLUME_UNKNOWN_WEIGHT",
             default="0",
         ),
+        google_trends=_parse_google_trends_settings(),
     )
 
 
@@ -104,14 +114,7 @@ def _load_pg_params() -> dict[str, str]:
 
 
 def _parse_positive_int(name: str, *, default: str) -> int:
-    raw_value = os.environ.get(name, default).strip()
-    try:
-        value = int(raw_value)
-    except ValueError as exc:
-        raise ConfigError(f"{name} must be an integer, got {raw_value!r}.") from exc
-    if value <= 0:
-        raise ConfigError(f"{name} must be greater than zero, got {value}.")
-    return value
+    return _parse_positive_int_value(os.environ.get(name, default).strip(), name)
 
 
 def _parse_non_negative_int(name: str, *, default: str) -> int:
@@ -123,6 +126,7 @@ def _parse_non_negative_int(name: str, *, default: str) -> int:
     if value < 0:
         raise ConfigError(f"{name} must be zero or greater, got {value}.")
     return value
+
 
 def _parse_top_n() -> int:
     value = _parse_positive_int("TRENDS_TOP_N", default="25")
@@ -166,6 +170,78 @@ def _parse_country_weight_overrides() -> Mapping[str, int]:
         weights[code] = weight
     return MappingProxyType(weights)
 
+
+def _parse_google_trends_settings() -> GoogleTrendsSettings:
+    return GoogleTrendsSettings(
+        request_delay_seconds=_parse_non_negative_float_with_aliases(
+            ("GOOGLE_TRENDS_REQUEST_DELAY_SECONDS", "TRENDS_REQUEST_DELAY_SECONDS"),
+            default="5",
+        ),
+        max_retries=_parse_positive_int_with_aliases(
+            ("GOOGLE_TRENDS_MAX_RETRIES", "TRENDS_429_RETRY_ATTEMPTS"),
+            default="5",
+        ),
+        retry_backoff_seconds=_parse_non_negative_float_with_aliases(
+            (
+                "GOOGLE_TRENDS_RETRY_BACKOFF_SECONDS",
+                "TRENDS_429_RETRY_INITIAL_DELAY_SECONDS",
+            ),
+            default="60",
+        ),
+        retry_backoff_multiplier=_parse_positive_float_with_aliases(
+            ("GOOGLE_TRENDS_RETRY_BACKOFF_MULTIPLIER", "TRENDS_429_RETRY_BACKOFF"),
+            default="2",
+        ),
+    )
+
+
+def _parse_positive_int_with_aliases(names: tuple[str, ...], *, default: str) -> int:
+    return _parse_positive_int_value(_first_env_value(names, default), names[0])
+
+
+def _parse_non_negative_float_with_aliases(
+    names: tuple[str, ...],
+    *,
+    default: str,
+) -> float:
+    value = _parse_float_value(_first_env_value(names, default), names[0])
+    if value < 0:
+        raise ConfigError(f"{names[0]} must be zero or greater, got {value}.")
+    return value
+
+
+def _parse_positive_float_with_aliases(names: tuple[str, ...], *, default: str) -> float:
+    value = _parse_float_value(_first_env_value(names, default), names[0])
+    if value <= 0:
+        raise ConfigError(f"{names[0]} must be greater than zero, got {value}.")
+    return value
+
+
+def _first_env_value(names: tuple[str, ...], default: str) -> str:
+    for name in names:
+        value = os.environ.get(name)
+        if value is not None and value.strip():
+            return value.strip()
+    return default
+
+
+def _parse_positive_int_value(raw_value: str, name: str) -> int:
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be an integer, got {raw_value!r}.") from exc
+    if value <= 0:
+        raise ConfigError(f"{name} must be greater than zero, got {value}.")
+    return value
+
+
+def _parse_float_value(raw_value: str, name: str) -> float:
+    try:
+        return float(raw_value)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be a number, got {raw_value!r}.") from exc
+
+
 def _parse_timezone(name: str) -> tzinfo | None:
     raw_value = _non_empty(name)
     if raw_value is None:
@@ -180,10 +256,7 @@ def _parse_timezone(name: str) -> tzinfo | None:
 
 def _parse_non_negative_float(name: str, *, default: str) -> float:
     raw_value = os.environ.get(name, default).strip()
-    try:
-        value = float(raw_value)
-    except ValueError as exc:
-        raise ConfigError(f"{name} must be a number, got {raw_value!r}.") from exc
+    value = _parse_float_value(raw_value, name)
     if value < 0:
         raise ConfigError(f"{name} must be zero or greater, got {value}.")
     return value

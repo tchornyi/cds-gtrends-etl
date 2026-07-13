@@ -30,7 +30,10 @@ def run(
         if not skip_migrations:
             apply_migrations(conn, local_tz=settings.trends_timezone)
 
-        raw_entries = extract_trends(settings.trends_geo)
+        raw_entries = extract_trends(
+            settings.trends_geo,
+            trends_settings=settings.google_trends,
+        )
         records = transform_trends(
             raw_entries,
             top_n=settings.trends_top_n,

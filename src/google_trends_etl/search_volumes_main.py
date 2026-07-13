@@ -30,7 +30,11 @@ def run(
         if not skip_migrations:
             apply_migrations(conn, local_tz=settings.trends_timezone)
 
-        batches = extract_interest(settings.search_terms, settings.reference_term)
+        batches = extract_interest(
+            settings.search_terms,
+            settings.reference_term,
+            trends_settings=settings.google_trends,
+        )
         records = transform_search_volumes(
             batches,
             reference_volume=settings.reference_term_daily_volume,

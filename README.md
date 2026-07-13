@@ -48,6 +48,10 @@ Then edit `.env` with either `DATABASE_URL` or all `PG*` settings.
 | `REFERENCE_TERM_DAILY_VOLUME` | Assumed daily volume of the anchor term                  | `300000000` |
 | `COUNTRY_VOLUME_WEIGHT_OVERRIDES` | Optional `CODE=WEIGHT` overrides for bundled country-size weights | — |
 | `COUNTRY_VOLUME_UNKNOWN_WEIGHT` | Weight for unknown country codes; `0` skips them          | `0`     |
+| `GOOGLE_TRENDS_REQUEST_DELAY_SECONDS` | Delay trendspy waits between Google Trends requests | `5` |
+| `GOOGLE_TRENDS_MAX_RETRIES` | Rate-limit retry attempts per Google Trends request | `5` |
+| `GOOGLE_TRENDS_RETRY_BACKOFF_SECONDS` | Initial wait before retrying a 429 response | `60` |
+| `GOOGLE_TRENDS_RETRY_BACKOFF_MULTIPLIER` | Multiplier for each subsequent retry wait | `2` |
 | `PRE_LOAD_SLEEP_SECONDS` | Simulated delay before loading records into PostgreSQL         | `20`    |
 
 A local `.env` is auto-loaded; real environment variables always override it.
@@ -121,7 +125,9 @@ add the next `NNN_*.sql` in `migrations/`; never edit an applied migration.
 
 - trendspy scrapes undocumented endpoints; breakage shows up as extract-stage
   schema/HTTP errors. Its version is pinned in `pyproject.toml` — treat
-  upgrades as deliberate changes.
+  upgrades as deliberate changes. The Google Trends calls have configurable
+  request delay and 429 rate-limit retries, but repeated quota failures may
+  still need less frequent schedules or staggered run times.
 - Volume figures are Google's approximations, never exact counts.
 - Fewer than 25 rows in a snapshot is acceptable (short feed or skipped
   entries) — the run logs the count.

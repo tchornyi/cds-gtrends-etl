@@ -34,6 +34,7 @@ def run(
         extracted = extract_country_interest(
             settings.search_terms,
             settings.reference_term,
+            trends_settings=settings.google_trends,
         )
         records = transform_country_volumes(
             extracted,
