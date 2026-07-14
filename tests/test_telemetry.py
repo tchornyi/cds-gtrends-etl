@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -120,6 +123,22 @@ class TelemetryTests(unittest.TestCase):
             point["attributes"],
         )
 
+    def test_module_import_with_otel_endpoint_configures_cleanly(self):
+        env = os.environ.copy()
+        env["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"] = "http://127.0.0.1:9/v1/metrics"
+        env["OTEL_EXPORTER_OTLP_METRICS_HEADERS"] = "Authorization=Bearer%20token"
+
+        result = subprocess.run(
+            [sys.executable, "-c", "import google_trends_etl.telemetry; print('ok')"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("ok", result.stdout)
+        self.assertNotIn("Failed to configure OpenTelemetry", result.stderr)
     def test_record_rows_affected_smoke(self):
         telemetry.record_rows_affected(
             3,

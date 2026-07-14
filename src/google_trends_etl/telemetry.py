@@ -95,65 +95,6 @@ class CDSJsonMetricExporter(MetricExporter):
         return None
 
 
-def configure_telemetry() -> None:
-    """Install the SDK-backed OTLP meter provider used by CDS.
-
-    CDS injects OTEL_EXPORTER_OTLP_METRICS_* and OTEL_RESOURCE_ATTRIBUTES for
-    deployed runs. The exporter reads those variables itself; do not construct a
-    Resource here, because that would risk dropping the CDS run correlation.
-    """
-    if not os.environ.get("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"):
-        LOGGER.debug("OTLP metrics endpoint is not set; using default meter provider.")
-        return
-
-    try:
-        exporter = CDSJsonMetricExporter()
-        reader = PeriodicExportingMetricReader(exporter)
-        provider = MeterProvider(metric_readers=[reader])
-        metrics.set_meter_provider(provider)
-    except Exception:  # pragma: no cover - deployment/environment failures are external.
-        LOGGER.exception("Failed to configure OpenTelemetry metrics exporter.")
-
-
-configure_telemetry()
-
-_METER = metrics.get_meter(METER_NAME, __version__)
-_ROWS_AFFECTED = _METER.create_histogram(
-    ROWS_AFFECTED_METRIC,
-    unit="{row}",
-    description="Rows inserted or upserted by one completed ETL run.",
-)
-
-
-def record_rows_affected(
-    rows: int,
-    *,
-    pipeline: str,
-    table: str,
-    operation: str,
-) -> None:
-    _ROWS_AFFECTED.record(
-        rows,
-        {
-            "pipeline": pipeline,
-            "table": table,
-            "operation": operation,
-        },
-    )
-    _flush_metrics()
-
-
-def _flush_metrics() -> None:
-    provider = metrics.get_meter_provider()
-    force_flush = getattr(provider, "force_flush", None)
-    if not callable(force_flush):
-        return
-    try:
-        force_flush(timeout_millis=5_000)
-    except Exception:  # pragma: no cover - exporter/provider failures are external.
-        LOGGER.exception("Failed to flush OpenTelemetry metrics.")
-
-
 def _otel_headers() -> dict[str, str]:
     raw_headers = os.environ.get(
         "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
@@ -233,10 +174,12 @@ def _histogram_data_point(point: Any) -> dict[str, Any]:
             "sum": point.sum,
             "bucketCounts": [str(count) for count in point.bucket_counts],
             "explicitBounds": list(point.explicit_bounds),
-            "min": point.min,
-            "max": point.max,
         }
     )
+    if point.min is not None:
+        item["min"] = point.min
+    if point.max is not None:
+        item["max"] = point.max
     return item
 
 
@@ -268,3 +211,62 @@ def _temporality(value: AggregationTemporality) -> str:
     if value == AggregationTemporality.DELTA:
         return "AGGREGATION_TEMPORALITY_DELTA"
     return "AGGREGATION_TEMPORALITY_CUMULATIVE"
+
+
+def configure_telemetry() -> None:
+    """Install the SDK-backed OTLP meter provider used by CDS.
+
+    CDS injects OTEL_EXPORTER_OTLP_METRICS_* and OTEL_RESOURCE_ATTRIBUTES for
+    deployed runs. The exporter reads those variables itself; do not construct a
+    Resource here, because that would risk dropping the CDS run correlation.
+    """
+    if not os.environ.get("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"):
+        LOGGER.debug("OTLP metrics endpoint is not set; using default meter provider.")
+        return
+
+    try:
+        exporter = CDSJsonMetricExporter()
+        reader = PeriodicExportingMetricReader(exporter)
+        provider = MeterProvider(metric_readers=[reader])
+        metrics.set_meter_provider(provider)
+    except Exception:  # pragma: no cover - deployment/environment failures are external.
+        LOGGER.exception("Failed to configure OpenTelemetry metrics exporter.")
+
+
+configure_telemetry()
+
+_METER = metrics.get_meter(METER_NAME, __version__)
+_ROWS_AFFECTED = _METER.create_histogram(
+    ROWS_AFFECTED_METRIC,
+    unit="{row}",
+    description="Rows inserted or upserted by one completed ETL run.",
+)
+
+
+def record_rows_affected(
+    rows: int,
+    *,
+    pipeline: str,
+    table: str,
+    operation: str,
+) -> None:
+    _ROWS_AFFECTED.record(
+        rows,
+        {
+            "pipeline": pipeline,
+            "table": table,
+            "operation": operation,
+        },
+    )
+    _flush_metrics()
+
+
+def _flush_metrics() -> None:
+    provider = metrics.get_meter_provider()
+    force_flush = getattr(provider, "force_flush", None)
+    if not callable(force_flush):
+        return
+    try:
+        force_flush(timeout_millis=5_000)
+    except Exception:  # pragma: no cover - exporter/provider failures are external.
+        LOGGER.exception("Failed to flush OpenTelemetry metrics.")
